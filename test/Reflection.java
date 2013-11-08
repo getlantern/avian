@@ -38,7 +38,26 @@ public class Reflection {
     if (! v) throw new RuntimeException();
   }
 
+  private static class Hello { }
+
+  private static void innerClasses() throws Exception {
+    Class c = Reflection.class;
+    Class[] inner = c.getDeclaredClasses();
+    expect(1 == inner.length);
+    expect(Hello.class == inner[0]);
+  }
+
+  private int egads;
+
+  private static void annotations() throws Exception {
+    Field egads = Reflection.class.getDeclaredField("egads");
+    expect(egads.getAnnotation(Deprecated.class) == null);
+  }
+
   public static void main(String[] args) throws Exception {
+    innerClasses();
+    annotations();
+
     Class system = Class.forName("java.lang.System");
     Field out = system.getDeclaredField("out");
     Class output = Class.forName("java.io.PrintStream");
@@ -67,5 +86,10 @@ public class Reflection {
 
     expect(7.0 == (Double) Reflection.class.getMethod
            ("doubleMethod").invoke(null));
+
+    Class[][] array = new Class[][] { { Class.class } };
+    expect("[Ljava.lang.Class;".equals(array[0].getClass().getName()));
+    expect(Class[].class == array[0].getClass());
+    expect(array.getClass().getComponentType() == array[0].getClass());
   }
 }

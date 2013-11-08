@@ -261,7 +261,7 @@ endif
 input = List
 
 ifeq ($(use-clang),true)
-	build-cxx = clang -std=c++11
+	build-cxx = clang++ -std=c++11
 	build-cc = clang
 else
 	build-cxx = g++
@@ -302,7 +302,7 @@ cflags_debug_fast = -O0 -g3
 cflags_stress = -O0 -g3
 cflags_stress_major = -O0 -g3
 ifeq ($(use-clang),true)
-	cflags_fast = -O4 -g3
+	cflags_fast = -O3 -flto -g3
 	cflags_small = -Oz -g3
 else
 	cflags_fast = -O3 -g3
@@ -345,6 +345,18 @@ converter-cflags = -D__STDC_CONSTANT_MACROS -Iinclude/ -Isrc/ \
 cflags = $(build-cflags)
 
 common-lflags = -lm -lz
+
+ifeq ($(use-clang),true)
+  ifeq ($(build-platform),darwin)
+    common-lflags += -Wl,-export_dynamic
+  else
+    ifneq ($(platform),windows)
+      common-lflags += -Wl,-E
+    else
+      common-lflags += -Wl,--export-all-symbols
+    endif
+  endif
+endif
 
 build-lflags = -lz -lpthread -ldl
 
@@ -462,8 +474,7 @@ endif
 
 ifeq ($(build-platform),darwin)
 	build-cflags = $(common-cflags) -fPIC -fvisibility=hidden -I$(src)
-	cflags += -I/System/Library/Frameworks/JavaVM.framework/Headers/ \
-		-Wno-deprecated-declarations
+	cflags += -Wno-deprecated-declarations
 	build-lflags += -framework CoreFoundation
 endif
 
@@ -679,6 +690,8 @@ ifeq ($(platform),darwin)
 		asmflags += -arch x86_64
 		lflags += -arch x86_64
 	endif
+
+	cflags += -I$(JAVA_HOME)/include/darwin
 endif
 
 openjdk-extra-cflags += $(classpath-extra-cflags)
@@ -1288,6 +1301,7 @@ ifneq ($(classpath),avian)
 		$(classpath-src)/avian/Callback.java \
 		$(classpath-src)/avian/CallbackReceiver.java \
 		$(classpath-src)/avian/ClassAddendum.java \
+		$(classpath-src)/avian/InnerClassReference.java \
 		$(classpath-src)/avian/Classes.java \
 		$(classpath-src)/avian/ConstantPool.java \
 		$(classpath-src)/avian/Continuations.java \
@@ -1474,12 +1488,19 @@ ifeq ($(continuations),true)
 $(build)/compile-x86-asm.o: $(src)/continuations-x86.$(asm-format)
 endif
 
-$(build)/run-tests.sh: $(test-classes) makefile
+$(build)/run-tests.sh: $(test-classes) makefile $(build)/extra-dir/multi-classpath-test.txt $(build)/test/multi-classpath-test.txt
 	echo 'cd $$(dirname $$0)' > $(@)
 	echo "sh ./test.sh 2>/dev/null \\" >> $(@)
-	echo "$(shell echo $(library-path) | sed 's|$(build)|\.|g') ./$(name)-unittest${exe-suffix} ./$(notdir $(test-executable)) $(mode) \"-Djava.library.path=. -cp test\" \\" >> $(@)
+	echo "$(shell echo $(library-path) | sed 's|$(build)|\.|g') ./$(name)-unittest${exe-suffix} ./$(notdir $(test-executable)) $(mode) \"-Djava.library.path=. -cp test:extra-dir\" \\" >> $(@)
 	echo "$(call class-names,$(test-build),$(filter-out $(test-support-classes), $(test-classes))) \\" >> $(@)
 	echo "$(continuation-tests) $(tail-tests)" >> $(@)
+
+$(build)/extra-dir/multi-classpath-test.txt:
+	mkdir -p $(build)/extra-dir
+	echo "$@" > $@
+
+$(build)/test/multi-classpath-test.txt:
+	echo "$@" > $@
 
 $(build)/test.sh: $(test)/test.sh
 	cp $(<) $(@)
@@ -1657,7 +1678,7 @@ endif
 $(build)/%.o: $(lzma)/C/%.c
 	@echo "compiling $(@)"
 	@mkdir -p $(dir $(@))
-	$(cxx) $(cflags) $(no-error) -c $$($(windows-path) $(<)) $(call output,$(@))
+	$(cc) $(cflags) $(no-error) -c $$($(windows-path) $(<)) $(call output,$(@))
 
 $(vm-asm-objects): $(build)/%-asm.o: $(src)/%.$(asm-format)
 	$(compile-asm-object)
@@ -1771,7 +1792,7 @@ executable-objects = $(vm-objects) $(classpath-objects) $(driver-object) \
 	$(javahome-object) $(boot-javahome-object) $(lzma-decode-objects)
 
 unittest-executable-objects = $(unittest-objects) $(vm-objects) \
-	$(build)/util/arg-parser.o $(stub-objects)
+	$(build)/util/arg-parser.o $(stub-objects) $(lzma-decode-objects)
 
 ifeq ($(process),interpret)
 	unittest-executable-objects += $(all-codegen-target-objects)
